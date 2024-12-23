@@ -1,0 +1,92 @@
+name: Deploy branches to channels
+
+on:
+  push:
+    branches: '**'
+
+env:
+  node_version: '18.x'
+  project-directory: ./
+
+jobs:
+  deploy:
+    name: Deploy branch to channel
+    runs-on: ubuntu-latest
+    outputs:
+      branch: ${{ steps.branch-names.outputs.current_branch }}
+      channel: ${{ steps.get-channel.outputs.channel }}
+      DIGITALOCEAN_TOKEN: ${{ steps.resolver.outputs.DIGITALOCEAN_TOKEN }}
+      CLUSTER_NAME: ${{ steps.resolver.outputs.CLUSTER_NAME }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Get branch names
+        id: branch-names
+        uses: tj-actions/branch-names@v8
+
+      - name: Get npm version
+        id: package-version
+        uses: martinbeentjes/npm-get-version-action@master
+
+      - name: Get channel information
+        id: get-channel
+        run: |
+          BRANCH_NAME="${{ steps.branch-names.outputs.current_branch }}"
+          content=$(<.releaserc)
+          branches=$(jq -r '.branches | keys[]' <<< "$content")
+          for branch in $branches; do
+            branch_name=$(jq -r ".branches[$branch].name" <<< "$content")
+            if [[ "$BRANCH_NAME" =~ $branch_name ]]; then
+              channel=$(jq -r ".branches[$branch].channel" <<< "$content")
+              echo "::set-output name=channel::$channel"
+              exit 0
+            fi
+          done
+          echo "No channel found for branch $BRANCH_NAME"
+          exit 1
+        shell: bash
+
+      - name: Get deploy token
+        id: resolver
+        run: |
+          CHANNEL="${{ steps.get-channel.outputs.channel }}"
+          case "$CHANNEL" in
+            "rc")
+              echo "::set-output name=DIGITALOCEAN_TOKEN::${{ secrets.DIGITALOCEAN_PRODUCTION_TOKEN }}"
+              echo "::set-output name=CLUSTER_NAME::${{ secrets.PRODUCTION_CLUSTER_NAME }}"
+              ;;
+            "alpha")
+              echo "::set-output name=DIGITALOCEAN_TOKEN::${{ secrets.TEST_DIGITALOCEAN_TOKEN }}"
+              echo "::set-output name=CLUSTER_NAME::${{ secrets.TEST_CLUSTER_NAME }}"
+              ;;
+            *)
+              echo "No token found for channel $CHANNEL"
+              exit 1
+              ;;
+          esac
+        shell: bash
+
+      - name: Deploy to channel
+        id: deploy
+        run: |
+          echo "Branch: ${{ steps.branch-names.outputs.current_branch }}"
+          echo "Channel: ${{ steps.get-channel.outputs.channel }}"
+          echo "DIGITALOCEAN_TOKEN: ${{ steps.resolver.outputs.DIGITALOCEAN_TOKEN }}"
+          echo "CLUSTER_NAME: ${{ steps.resolver.outputs.CLUSTER_NAME }}"
+          
+      - name: Run kustomize
+        run: (cd ./deployment/base && ../../kustomize edit set image greenstand/treetracker-query-api:${{ steps.package-version.outputs.current-version }} )
+        working-directory: ${{ env.project-directory }}
+
+      - name: Install doctl for kubernetes
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ steps.resolver.outputs.DIGITALOCEAN_TOKEN }}
+
+      - name: Save DigitalOcean kubeconfig
+        run: doctl kubernetes cluster kubeconfig save ${{ steps.resolver.outputs.CLUSTER_NAME }}
+
+      - name: Update kubernetes resources
+        run: kustomize build deployment/overlays/prod | kubectl apply -n webmap --wait -f -
+        working-directory: ${{ env.project-directory }}
