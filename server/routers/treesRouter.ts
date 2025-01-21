@@ -8,6 +8,13 @@ import TreeModel from '../models/Tree';
 import HttpError from '../utils/HttpError';
 
 const router = express.Router();
+
+type GeoJson = Partial<{
+  geometry: {
+    coordinates: number[];
+  };
+}>;
+
 type Filter = Partial<{
   planter_id: number;
   organization_id: number;
@@ -15,6 +22,7 @@ type Filter = Partial<{
   tag: string;
   wallet_id: string;
   active: true;
+  geoJsonArr: GeoJson[];
 }>;
 
 router.get(
@@ -70,6 +78,7 @@ router.get(
         offset: Joi.number().integer().min(0),
         startDate: Joi.string().regex(/^\d{4}-\d{2}-\d{2}$/),
         endDate: Joi.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        geoJsonStr: Joi.string(),
       }),
     );
     const {
@@ -83,6 +92,7 @@ router.get(
       endDate,
       tag,
       wallet_id,
+      geoJsonStr,
     } = req.query;
     const repo = new TreeRepository(new Session());
     const filter: Filter = { active: true };
@@ -105,6 +115,8 @@ router.get(
       filter.tag = tag;
     } else if (wallet_id) {
       filter.wallet_id = wallet_id;
+    } else if (geoJsonStr) {
+      filter.geoJsonArr = JSON.parse(decodeURIComponent(geoJsonStr));
     }
 
     const result = await TreeModel.getByFilter(repo)(filter, options);

@@ -135,4 +135,36 @@ describe('trees', () => {
     },
     1000 * 30,
   );
+
+  it(
+    'trees/?geoJsonStr=encodedgeoJson',
+    async () => {
+      const geoJsonArr = [
+        {
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [-122.6064, 39.0619] },
+          properties: {},
+        },
+        {
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [-123.3139, 38.1519] },
+          properties: {},
+        },
+        {
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [-121.1001, 37.8879] },
+          properties: {},
+        },
+      ];
+
+      const encodedgeoJson = encodeURIComponent(JSON.stringify(geoJsonArr));
+
+      const response = await supertest(app).get(
+        `/trees?geoJsonStr=${encodedgeoJson}`,
+      );
+      expect(response.status).toBe(200);
+      expect(response.body.trees.length).toBe(145);
+    },
+    1000 * 30,
+  );
 });

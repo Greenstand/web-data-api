@@ -4,11 +4,17 @@ import Tree from 'interfaces/Tree';
 import { delegateRepository } from '../infra/database/delegateRepository';
 import TreeRepository from '../infra/database/TreeRepository';
 
+type GeoJson = Partial<{
+  geometry: {
+    coordinates: number[];
+  };
+}>;
 type Filter = Partial<{
   organization_id: number;
   date_range: { startDate: string; endDate: string };
   tag: string;
   wallet_id: string;
+  geoJsonArr: GeoJson[];
 }>;
 
 function getByFilter(
@@ -39,6 +45,11 @@ function getByFilter(
     if (filter.wallet_id) {
       log.warn('using wallet filter...');
       const trees = await treeRepository.getByWallet(filter.wallet_id, options);
+      return trees;
+    }
+    if (filter.geoJsonArr) {
+      log.warn('using geometry filter...');
+      const trees = await treeRepository.getByGeometry(filter.geoJsonArr);
       return trees;
     }
 
@@ -84,6 +95,11 @@ function countByFilter(
       return total;
     }
 
+    if (filter.geoJsonArr) {
+      log.warn('using geometry filter...');
+      const total = await treeRepository.getByGeometry(filter.geoJsonArr, true);
+      return total;
+    }
     const total = await treeRepository.countByFilter(filter);
     return total;
   };

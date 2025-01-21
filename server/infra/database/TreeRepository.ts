@@ -4,6 +4,12 @@ import HttpError from 'utils/HttpError';
 import BaseRepository from './BaseRepository';
 import Session from './Session';
 
+type GeoJson = Partial<{
+  geometry: {
+    coordinates: number[];
+  };
+}>;
+
 export default class TreeRepository extends BaseRepository<Tree> {
   constructor(session: Session) {
     super('trees', session);
@@ -301,6 +307,44 @@ export default class TreeRepository extends BaseRepository<Tree> {
       LIMIT ${limit}
       OFFSET ${offset}
     `;
+    const object = await this.session.getDB().raw(sql);
+    return object.rows;
+  }
+
+  async getByGeometry(geoJsonArr: GeoJson[], totalCount = false) {
+    const pointArray = geoJsonArr.map(
+      (item) =>
+        `ST_MakePoint(${item.geometry?.coordinates[0]}, ${item.geometry?.coordinates[1]})`,
+    );
+    pointArray.push(
+      `ST_MakePoint(${geoJsonArr[0].geometry?.coordinates[0]}, ${geoJsonArr[0].geometry?.coordinates[1]})`,
+    );
+    if (totalCount) {
+      const totalSql = `
+        SELECT
+      COUNT(*)
+      FROM trees t
+      WHERE
+      ST_CONTAINS(
+      ST_SETSRID(ST_CONVEXHULL(ST_MAKELINE(ARRAY[${pointArray.toString()}])), 4326),
+      ST_SETSRID(ST_POINT(t.lon, t.lat), 4326)
+      )
+      `;
+      const total = await this.session.getDB().raw(totalSql);
+      return parseInt(total.rows[0].count.toString());
+    }
+
+    const sql = `
+      SELECT
+      *
+      FROM trees t
+      WHERE
+      ST_CONTAINS(
+      ST_SETSRID(ST_CONVEXHULL(ST_MAKELINE(ARRAY[${pointArray.toString()}])), 4326),
+      ST_SETSRID(ST_POINT(t.lon, t.lat), 4326)
+      )
+      `;
+
     const object = await this.session.getDB().raw(sql);
     return object.rows;
   }
